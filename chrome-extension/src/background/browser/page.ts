@@ -103,21 +103,32 @@ export default class Page {
       return true;
     }
 
+    // Check if chrome.debugger is available (not available in Firefox)
+    if (typeof chrome === 'undefined' || !chrome.debugger) {
+      logger.info('chrome.debugger not available (likely Firefox), skipping puppeteer attachment');
+      return false;
+    }
+
     logger.info('attaching puppeteer', this._tabId);
-    const browser = await connect({
-      transport: await ExtensionTransport.connectTab(this._tabId),
-      defaultViewport: null,
-      protocol: 'cdp' as ProtocolType,
-    });
-    this._browser = browser;
+    try {
+      const browser = await connect({
+        transport: await ExtensionTransport.connectTab(this._tabId),
+        defaultViewport: null,
+        protocol: 'cdp' as ProtocolType,
+      });
+      this._browser = browser;
 
-    const [page] = await browser.pages();
-    this._puppeteerPage = page;
+      const [page] = await browser.pages();
+      this._puppeteerPage = page;
 
-    // Add anti-detection scripts
-    await this._addAntiDetectionScripts();
+      // Add anti-detection scripts
+      await this._addAntiDetectionScripts();
 
-    return true;
+      return true;
+    } catch (error) {
+      logger.error('Failed to attach puppeteer:', error);
+      return false;
+    }
   }
 
   private async _addAntiDetectionScripts(): Promise<void> {

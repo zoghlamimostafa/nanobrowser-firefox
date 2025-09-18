@@ -145,7 +145,7 @@ export function getDefaultProviderConfig(providerId: string): ProviderConfig {
         baseUrl: '', // User needs to provide Azure endpoint
         // modelNames: [], // Not used for Azure configuration
         azureDeploymentNames: [], // Azure deployment names
-        azureApiVersion: '2024-02-15-preview', // Provide a common default API version
+        azureApiVersion: '2024-08-01-preview', // API version that supports structured output
         createdAt: Date.now(),
       };
     default: // Handles CustomOpenAI
@@ -189,7 +189,7 @@ function ensureBackwardCompatibility(providerId: string, config: ProviderConfig)
     // Ensure Azure fields exist, provide defaults if missing
     if (updatedConfig.azureApiVersion === undefined) {
       // console.log(`[ensureBackwardCompatibility] Adding default azureApiVersion for ${providerId}`);
-      updatedConfig.azureApiVersion = '2024-02-15-preview';
+      updatedConfig.azureApiVersion = '2024-08-01-preview';
     }
 
     // Initialize azureDeploymentNames array if it doesn't exist yet
@@ -242,6 +242,18 @@ export const llmProviderStore: LLMProviderStorage = {
       }
       if (!config.azureApiVersion?.trim()) {
         throw new Error('Azure API Version is required');
+      }
+      // Warn about API versions that may not support structured output
+      const apiVersion = config.azureApiVersion.trim();
+      if (
+        apiVersion < '2024-08-01-preview' &&
+        !apiVersion.includes('2024-08') &&
+        !apiVersion.includes('2024-09') &&
+        !apiVersion.includes('2024-10')
+      ) {
+        console.warn(
+          `Azure API version ${apiVersion} may not support structured output. Consider using 2024-08-01-preview or later for full compatibility.`,
+        );
       }
       if (!config.apiKey?.trim()) {
         throw new Error('API Key is required for Azure OpenAI');

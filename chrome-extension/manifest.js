@@ -63,12 +63,18 @@ const manifest = withOperaSidebar(
     host_permissions: ['<all_urls>'],
     permissions: ['storage', 'scripting', 'tabs', 'activeTab', 'debugger', 'unlimitedStorage', 'webNavigation'],
     options_page: 'options/index.html',
-    background: {
-      service_worker: 'background.iife.js',
-      type: 'module',
-    },
+    background: isFirefox
+      ? {
+          scripts: ['background.iife.js'],
+        }
+      : {
+          service_worker: 'background.iife.js',
+          type: 'module',
+        },
     action: {
       default_icon: 'icon-32.png',
+      // In Firefox, open side panel in a popup since sidePanel API is not supported
+      ...(isFirefox && { default_popup: 'side-panel/index.html' }),
     },
     icons: {
       128: 'icon-128.png',

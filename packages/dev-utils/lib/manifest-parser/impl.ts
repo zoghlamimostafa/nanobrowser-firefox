@@ -14,10 +14,23 @@ function convertToFirefoxCompatibleManifest(manifest: Manifest) {
     ...manifest,
   } as { [key: string]: unknown };
 
+  // Handle background scripts properly for Firefox
+  const background = manifest.background as any;
+  const backgroundScript =
+    background?.service_worker || (background?.scripts && background.scripts[0]) || 'background.iife.js';
+
   manifestCopy.background = {
-    scripts: [manifest.background?.service_worker],
-    type: 'module',
+    scripts: [backgroundScript],
   };
+
+  // Filter out Firefox-incompatible permissions
+  const firefoxIncompatiblePermissions = ['debugger', 'sidePanel'];
+  if (manifest.permissions) {
+    manifestCopy.permissions = manifest.permissions.filter(
+      permission => !firefoxIncompatiblePermissions.includes(permission),
+    );
+  }
+
   manifestCopy.options_ui = {
     page: manifest.options_page,
     browser_style: false,
@@ -27,7 +40,7 @@ function convertToFirefoxCompatibleManifest(manifest: Manifest) {
   };
   manifestCopy.browser_specific_settings = {
     gecko: {
-      id: 'example@example.com',
+      id: 'nanobrowser@nanobrowser.ai',
       strict_min_version: '109.0',
     },
   };

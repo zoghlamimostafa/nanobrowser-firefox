@@ -1,6 +1,7 @@
-/* Add this at the top of the file */
+/* Remove the problematic border styling */
 body {
-  border-color: rgb(159, 6, 11) !important; /* sky-200 color */
+  margin: 0;
+  padding: 0;
 }
 
 /* Remove unused classes: .App, .App-logo, .App-header */

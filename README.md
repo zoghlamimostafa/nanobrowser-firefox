@@ -13,9 +13,11 @@
 
 </div>
 
-## 🌐 Nanobrowser
+## 🦊 Nanobrowser Firefox Edition
 
 Nanobrowser is an open-source AI web automation tool that runs in your browser. A free alternative to OpenAI Operator with flexible LLM options and multi-agent system.
+
+**🔥 This is the Firefox-compatible version of Nanobrowser!** All features have been adapted to work seamlessly with Firefox while maintaining full functionality.
 
 ⬇️ Get [Nanobrowser from Chrome Web Store](https://chromewebstore.google.com/detail/nanobrowser/imbddededgmcgfhfpcjmijokokekbkal) for free
 
@@ -55,26 +57,25 @@ Looking for a powerful AI browser agent without the $200/month price tag of Open
 ## 🌐 Browser Support
 
 **Officially Supported:**
-- **Chrome** - Full support with all features
-- **Edge** - Full support with all features
+- **Firefox** - Full support with all features (this version)
 
-**Not Supported:**
-- Firefox, Safari, and other Chromium variants (Opera, Arc, etc.)
+**Original Chrome Version:**
+- The original Chrome/Edge version is available at [https://github.com/nanobrowser/nanobrowser](https://github.com/nanobrowser/nanobrowser)
 
-> **Note**: While Nanobrowser may function on other Chromium-based browsers, we recommend using Chrome or Edge for the best experience and guaranteed compatibility.
+> **Note**: This is a Firefox-specific port of Nanobrowser with all features adapted for Firefox compatibility, including proper manifest handling, cross-browser API usage, and Firefox-specific optimizations.
 
 
 ## 🚀 Quick Start
 
-1. **Install from Chrome Web Store** (Stable Version):
-   * Visit the [Nanobrowser Chrome Web Store page](https://chromewebstore.google.com/detail/nanobrowser/imbddededgmcgfhfpcjmijokokekbkal)
-   * Click "Add to Chrome" button
+1. **Install Firefox Extension**:
+   * Download the latest XPI file from this repository's releases
+   * Open Firefox and go to `about:addons`
+   * Click the gear icon (⚙️) and select "Install Add-on From File..."
+   * Select the downloaded `.xpi` file
    * Confirm the installation when prompted
 
-> **Important Note**: For latest features, install from ["Manually Install Latest Version"](#-manually-install-latest-version) below, as Chrome Web Store version may be delayed due to review process.
-
 2. **Configure Agent Models**:
-   * Click the Nanobrowser icon in your toolbar to open the sidebar
+   * Click the Nanobrowser icon in your toolbar to open the popup
    * Click the `Settings` icon (top right)
    * Add your LLM API keys
    * Choose which model to use for different agents (Navigator, Planner)
@@ -84,19 +85,18 @@ Looking for a powerful AI browser agent without the $200/month price tag of Open
 To get the most recent version with all the latest features:
 
 1. **Download**
-    * Download the latest `nanobrowser.zip` file from the official Github [release page](https://github.com/nanobrowser/nanobrowser/releases).
+    * Download the latest `.xpi` file from this repository's releases
 
 2. **Install**:
-    * Unzip `nanobrowser.zip`.
-    * Open `chrome://extensions/` in Chrome
-    * Enable `Developer mode` (top right)
-    * Click `Load unpacked` (top left)
-    * Select the unzipped `nanobrowser` folder.
+    * Open Firefox and navigate to `about:addons`
+    * Click the gear icon (⚙️) in the top-right corner
+    * Select "Install Add-on From File..."
+    * Choose the downloaded `.xpi` file
 
 3. **Configure Agent Models**
-    * Click the Nanobrowser icon in your toolbar to open the sidebar
-    * Click the `Settings` icon (top right).
-    * Add your LLM API keys.
+    * Click the Nanobrowser icon in your toolbar to open the popup
+    * Click the `Settings` icon (top right)
+    * Add your LLM API keys
     * Choose which model to use for different agents (Navigator, Planner)
 
 4. **Upgrading**:

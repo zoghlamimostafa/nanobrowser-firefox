@@ -25,8 +25,10 @@ const browserContext = new BrowserContext({});
 let currentExecutor: Executor | null = null;
 let currentPort: chrome.runtime.Port | null = null;
 
-// Setup side panel behavior
-chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(error => console.error(error));
+// Setup side panel behavior (Chrome only)
+if (typeof chrome !== 'undefined' && chrome.sidePanel) {
+  chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(error => console.error(error));
+}
 
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   if (tabId && changeInfo.status === 'complete' && tab.url?.startsWith('http')) {
@@ -34,17 +36,19 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   }
 });
 
-// Listen for debugger detached event
+// Listen for debugger detached event (Chrome only)
 // if canceled_by_user, remove the tab from the browser context
-chrome.debugger.onDetach.addListener(async (source, reason) => {
-  console.log('Debugger detached:', source, reason);
-  if (reason === 'canceled_by_user') {
-    if (source.tabId) {
-      currentExecutor?.cancel();
-      await browserContext.cleanup();
+if (typeof chrome !== 'undefined' && chrome.debugger) {
+  chrome.debugger.onDetach.addListener(async (source, reason) => {
+    console.log('Debugger detached:', source, reason);
+    if (reason === 'canceled_by_user') {
+      if (source.tabId) {
+        currentExecutor?.cancel();
+        await browserContext.cleanup();
+      }
     }
-  }
-});
+  });
+}
 
 // Cleanup when tab is closed
 chrome.tabs.onRemoved.addListener(tabId => {

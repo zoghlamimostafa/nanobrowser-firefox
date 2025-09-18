@@ -504,6 +504,7 @@ export const ModelSettings = ({ isDarkMode = false }: ModelSettingsProps) => {
       setAvailableModels(models);
     } catch (error) {
       console.error('Error saving API key:', error);
+      alert(`Failed to save provider configuration: ${error instanceof Error ? error.message : String(error)}`);
     }
   };
 

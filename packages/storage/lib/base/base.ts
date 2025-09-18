@@ -1,11 +1,80 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable @typescript-eslint/no-empty-function */
 import type { BaseStorage, StorageConfig, ValueOrUpdate } from './types';
 import { SessionAccessLevelEnum, StorageEnum } from './enums';
 
 /**
- * Chrome reference error while running `processTailwindFeatures` in tailwindcss.
- *  To avoid this, we need to check if the globalThis.chrome is available and add fallback logic.
+ * Cross-browser WebExtension storage helpers.
+ * - Prefer `browser.*` (webextension-polyfill) when available
+ * - Fall back to `chrome.*` and wrap callback APIs into Promises
  */
-const chrome = globalThis.chrome;
+const chromeRef: typeof globalThis.chrome | undefined = (globalThis as any).chrome;
+const browserRef: any = (globalThis as any).browser;
+
+type PromisifiedStorageArea = {
+  get: (keys?: string[] | string | null) => Promise<Record<string, any>>;
+  set: (items: Record<string, any>) => Promise<void>;
+  onChanged: typeof chrome.storage.onChanged;
+  setAccessLevel?: (options: { accessLevel: SessionAccessLevelEnum }) => Promise<void> | void;
+};
+
+function getPromisifiedStorageArea(storageEnum: StorageEnum): PromisifiedStorageArea | null {
+  // Use browser.* first (Promise-based via webextension-polyfill)
+  if (browserRef?.storage?.[storageEnum]) {
+    const area = browserRef.storage[storageEnum];
+    return {
+      get: (keys?: string[] | string | null) => area.get(keys),
+      set: (items: Record<string, any>) => area.set(items),
+      onChanged: browserRef.storage.onChanged,
+      setAccessLevel: area?.setAccessLevel?.bind(area),
+    } as PromisifiedStorageArea;
+  }
+
+  // Fallback to chrome.* and promisify callbacks when necessary
+  const c = chromeRef as any;
+  if (c?.storage?.[storageEnum]) {
+    const area = c.storage[storageEnum];
+
+    const get = (keys?: any) =>
+      new Promise<Record<string, any>>(resolve => {
+        try {
+          const maybe = area.get(keys);
+          if (maybe && typeof maybe.then === 'function') return void maybe.then(resolve);
+        } catch (_) {
+          // ignore and fallback to callback style
+        }
+        area.get(keys, (result: any) => resolve(result ?? {}));
+      });
+
+    const set = (items: Record<string, any>) =>
+      new Promise<void>(resolve => {
+        try {
+          const maybe = area.set(items);
+          if (maybe && typeof maybe.then === 'function') return void maybe.then(() => resolve());
+        } catch (_) {
+          // ignore and fallback to callback style
+        }
+        area.set(items, () => resolve());
+      });
+
+    const onChanged = c.storage.onChanged as typeof chrome.storage.onChanged;
+
+    const setAccessLevel = area.setAccessLevel
+      ? (options: { accessLevel: SessionAccessLevelEnum }) => {
+          try {
+            const maybe = area.setAccessLevel(options);
+            if (maybe && typeof maybe.then === 'function') return maybe;
+          } catch (_) {
+            // best-effort; some browsers may not support setAccessLevel
+          }
+        }
+      : undefined;
+
+    return { get, set, onChanged, setAccessLevel } as PromisifiedStorageArea;
+  }
+
+  return null;
+}
 
 /**
  * Sets or updates an arbitrary cache with a new value or the result of an update function.
@@ -44,11 +113,8 @@ let globalSessionAccessLevelFlag: StorageConfig['sessionAccessForContentScripts'
  * Checks if the storage permission is granted in the manifest.json.
  */
 function checkStoragePermission(storageEnum: StorageEnum): void {
-  if (!chrome) {
-    return;
-  }
-
-  if (chrome.storage[storageEnum] === undefined) {
+  const exists = Boolean(browserRef?.storage?.[storageEnum] ?? chromeRef?.storage?.[storageEnum]);
+  if (!exists) {
     throw new Error(`Check your storage permission in manifest.json: ${storageEnum} is not defined`);
   }
 }
@@ -74,21 +140,28 @@ export function createStorage<D = string>(key: string, fallback: D, config?: Sto
     config?.sessionAccessForContentScripts === true
   ) {
     checkStoragePermission(storageEnum);
-    chrome?.storage[storageEnum]
-      .setAccessLevel({
-        accessLevel: SessionAccessLevelEnum.ExtensionPagesAndContentScripts,
-      })
-      .catch(error => {
-        console.warn(error);
-        console.warn('Please call setAccessLevel into different context, like a background script.');
-      });
+    try {
+      const area = getPromisifiedStorageArea(storageEnum);
+      if (area?.setAccessLevel) {
+        const maybe = area.setAccessLevel({
+          accessLevel: SessionAccessLevelEnum.ExtensionPagesAndContentScripts,
+        });
+        if (maybe && typeof (maybe as any).then === 'function') {
+          (maybe as Promise<void>).catch(() => {});
+        }
+      }
+    } catch (error) {
+      console.warn(error);
+      console.warn('Please call setAccessLevel into different context, like a background script.');
+    }
     globalSessionAccessLevelFlag = true;
   }
 
   // Register life cycle methods
   const get = async (): Promise<D> => {
     checkStoragePermission(storageEnum);
-    const value = await chrome?.storage[storageEnum].get([key]);
+    const area = getPromisifiedStorageArea(storageEnum);
+    const value = (await area?.get?.([key])) as Record<string, any> | undefined;
 
     if (!value) {
       return fallback;
@@ -107,7 +180,8 @@ export function createStorage<D = string>(key: string, fallback: D, config?: Sto
     }
     cache = await updateCache(valueOrUpdate, cache);
 
-    await chrome?.storage[storageEnum].set({ [key]: serialize(cache) });
+    const area = getPromisifiedStorageArea(storageEnum);
+    await area?.set?.({ [key]: serialize(cache) });
     _emitChange();
   };
 
@@ -145,7 +219,8 @@ export function createStorage<D = string>(key: string, fallback: D, config?: Sto
 
   // Register listener for live updates for our storage area
   if (liveUpdate) {
-    chrome?.storage[storageEnum].onChanged.addListener(_updateFromStorageOnChanged);
+    const area = getPromisifiedStorageArea(storageEnum);
+    area?.onChanged.addListener(_updateFromStorageOnChanged);
   }
 
   return {
