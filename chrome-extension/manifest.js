@@ -61,7 +61,9 @@ const manifest = withOperaSidebar(
     version: packageJson.version,
     description: '__MSG_app_metadata_description__',
     host_permissions: ['<all_urls>'],
-    permissions: ['storage', 'scripting', 'tabs', 'activeTab', 'debugger', 'unlimitedStorage', 'webNavigation'],
+    permissions: isFirefox
+      ? ['storage', 'scripting', 'tabs', 'activeTab', 'unlimitedStorage', 'webNavigation']
+      : ['storage', 'scripting', 'tabs', 'activeTab', 'debugger', 'unlimitedStorage', 'webNavigation'],
     options_page: 'options/index.html',
     background: isFirefox
       ? {
@@ -100,6 +102,19 @@ const manifest = withOperaSidebar(
         matches: ['*://*/*'],
       },
     ],
+    // Firefox-specific settings
+    ...(isFirefox && {
+      browser_specific_settings: {
+        gecko: {
+          id: 'nanobrowser-firefox@zoghlamimostafa.github.io',
+          strict_min_version: '109.0',
+          data_collection_permissions: {
+            web_accessible_resources: false,
+            content_scripts: false,
+          },
+        },
+      },
+    }),
   }),
 );
 
