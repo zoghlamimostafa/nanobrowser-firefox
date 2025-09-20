@@ -1,0 +1,44 @@
+{
+  "name": "@extension/security-mcp",
+  "version": "0.1.12",
+  "description": "Security testing MCP server for Nanobrowser - Burp Suite integration and penetration testing tools",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "start": "node dist/index.js",
+    "test": "jest"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^0.5.0",
+    "axios": "^1.7.7",
+    "cheerio": "^1.0.0",
+    "ws": "^8.18.0",
+    "sqlite3": "^5.1.7",
+    "commander": "^12.1.0",
+    "chalk": "^5.3.0",
+    "yaml": "^2.5.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.7.5",
+    "@types/ws": "^8.5.12",
+    "@types/sqlite3": "^3.1.11",
+    "typescript": "^5.6.3",
+    "jest": "^29.7.0",
+    "@types/jest": "^29.5.13"
+  },
+  "bin": {
+    "nanobrowser-security": "./dist/cli.js"
+  },
+  "keywords": [
+    "security",
+    "penetration-testing",
+    "burp-suite",
+    "mcp",
+    "nanobrowser",
+    "vulnerability-scanner"
+  ],
+  "author": "Nanobrowser Security Team",
+  "license": "MIT"
+}
