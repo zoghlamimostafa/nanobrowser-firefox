@@ -11,6 +11,7 @@ import { PayloadGenerator } from './dist/payloads/payload-generator.js';
 import { ReconTools } from './dist/recon/recon-tools.js';
 import { SecurityDatabase } from './dist/database/security-database.js';
 import { ReportGenerator } from './dist/reporting/report-generator.js';
+import { BurpSuiteClient } from './dist/burp-suite/client.js';
 
 async function runDemo() {
   console.log('🔐 Nanobrowser Security MCP Demo\n');
@@ -20,6 +21,11 @@ async function runDemo() {
     const payloadGen = new PayloadGenerator();
     const recon = new ReconTools();
     const database = new SecurityDatabase();
+    const burpClient = new BurpSuiteClient({
+      host: 'localhost',
+      port: 1337,
+      apiKey: process.env.BURP_API_KEY || '',
+    });
 
     // Wait for database initialization
     await new Promise(resolve => setTimeout(resolve, 1000));
@@ -43,6 +49,29 @@ async function runDemo() {
 
     const sqliPayloads = await payloadGen.generateSQLiPayloads('mysql', 'union', "'", ' -- ');
     console.log(`   SQL Injection Payloads: ${sqliPayloads.length} generated`);
+
+    // Test Burp Suite connection
+    console.log('\n🔗 Testing Burp Suite Connection...');
+    try {
+      const isConnected = await burpClient.testConnection();
+      if (isConnected) {
+        const version = await burpClient.getVersion();
+        console.log(`   ✅ Connected to Burp Suite (Version: ${version})`);
+
+        // Demo a scan (only if connected)
+        console.log('   🚀 Starting demo scan...');
+        const scanResult = await burpClient.startScan({
+          urls: ['https://httpbin.org'],
+          scanType: 'crawl_and_audit',
+          scope: { include: ['*.httpbin.org'] },
+        });
+        console.log(`   ✅ Scan started with ID: ${scanResult.taskId}`);
+      } else {
+        console.log('   ⚠️  Burp Suite not available (this is normal if not running)');
+      }
+    } catch (error) {
+      console.log('   ⚠️  Burp Suite connection failed (this is normal if not running)');
+    }
 
     // Demo reconnaissance
     console.log('\n🔍 Reconnaissance Demo...');

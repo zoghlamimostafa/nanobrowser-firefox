@@ -1,19 +1,73 @@
-import axios, { AxiosInstance } from 'axios';
+import axios, { type AxiosInstance } from 'axios';
 
 export interface BurpScanResult {
   taskId: string;
-  status: 'running' | 'completed' | 'failed';
+  status: 'running' | 'completed' | 'failed' | 'paused';
   progress?: number;
+  url?: string;
+  scanMetrics?: {
+    requestCount: number;
+    responseCount: number;
+    errorCount: number;
+  };
+}
+
+export interface BurpRawIssue {
+  serialNumber: number;
+  type: number;
+  name: string;
+  issue_name?: string;
+  host: string;
+  path: string;
+  severity: string;
+  confidence: string;
+  issueBackground?: string;
+  issue_background?: string;
+  description?: string;
+  remediationBackground?: string;
+  remediation_background?: string;
+  remediation?: string;
+  issueDetail?: string;
+  remediationDetail?: string;
+  evidence?: string;
+  origin?: string;
+  url?: string;
 }
 
 export interface BurpVulnerability {
+  serialNumber: number;
+  type: number;
   name: string;
+  host: string;
+  path: string;
   severity: 'high' | 'medium' | 'low' | 'info';
-  url: string;
-  description: string;
-  evidence: string;
-  remediation: string;
   confidence: 'certain' | 'firm' | 'tentative';
+  issueBackground?: string;
+  remediationBackground?: string;
+  issueDetail?: string;
+  remediationDetail?: string;
+  requestResponse?: {
+    request: string;
+    response: string;
+  };
+}
+
+export interface BurpScanConfig {
+  urls: string[];
+  scanType?: 'crawl_and_audit' | 'crawl_only' | 'audit_only';
+  scope?: {
+    include?: string[];
+    exclude?: string[];
+  };
+  resourcePool?: number;
+  reportType?: 'XML' | 'HTML' | 'JSON';
+}
+
+export interface BurpProject {
+  projectId: string;
+  name: string;
+  description?: string;
+  created: string;
 }
 
 export interface BurpConfig {
@@ -21,6 +75,7 @@ export interface BurpConfig {
   port: number;
   apiKey?: string;
   useHttps?: boolean;
+  proxyPort?: number;
 }
 
 export class BurpSuiteClient {
@@ -30,9 +85,10 @@ export class BurpSuiteClient {
   constructor(config?: Partial<BurpConfig>) {
     this.config = {
       host: config?.host || 'localhost',
-      port: config?.port || 1337,
+      port: config?.port || 1337, // Burp Suite Enterprise API port
       apiKey: config?.apiKey || '',
       useHttps: config?.useHttps || false,
+      proxyPort: config?.proxyPort || 8080,
       ...config,
     };
 
@@ -48,17 +104,45 @@ export class BurpSuiteClient {
     });
   }
 
-  async startScan(url: string, scanType: string = 'crawl_and_audit', scope?: string): Promise<BurpScanResult> {
+  // Test connection to Burp Suite
+  async testConnection(): Promise<boolean> {
+    try {
+      const response = await this.client.get('/v0.1/knowledge_base/');
+      return response.status === 200;
+    } catch (error) {
+      console.warn('Burp Suite connection test failed:', error instanceof Error ? error.message : 'Unknown error');
+      return false;
+    }
+  }
+
+  // Get Burp Suite version info
+  async getVersion(): Promise<string> {
+    try {
+      const response = await this.client.get('/v0.1/version');
+      return response.data.version || 'Unknown';
+    } catch (error) {
+      throw new Error(`Failed to get version: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  // Create a new scan
+  async startScan(config: BurpScanConfig): Promise<BurpScanResult> {
     try {
       const payload = {
-        urls: [url],
+        urls: config.urls,
         scan_configurations: [
           {
-            name: scanType,
-            type: scanType === 'active' ? 'NamedConfiguration' : 'CustomConfiguration',
+            name: config.scanType || 'crawl_and_audit',
+            type: 'NamedConfiguration',
           },
         ],
-        ...(scope && { scope: { include: [{ rule: scope }] } }),
+        ...(config.scope && {
+          scope: {
+            include: config.scope.include?.map(rule => ({ rule })) || [],
+            exclude: config.scope.exclude?.map(rule => ({ rule })) || [],
+          },
+        }),
+        ...(config.resourcePool && { resource_pool: config.resourcePool }),
       };
 
       const response = await this.client.post('/v0.1/scan', payload);
@@ -66,6 +150,7 @@ export class BurpSuiteClient {
       return {
         taskId: response.data.task_id,
         status: 'running',
+        url: config.urls[0],
       };
     } catch (error) {
       console.error('Error starting Burp scan:', error);
@@ -99,8 +184,8 @@ export class BurpSuiteClient {
       const issues = response.data.issues || response.data;
 
       return issues
-        .filter((issue: any) => !severity || issue.severity === severity)
-        .map((issue: any) => this.mapBurpIssue(issue));
+        .filter((issue: BurpRawIssue) => !severity || issue.severity === severity)
+        .map((issue: BurpRawIssue) => this.mapBurpIssue(issue));
     } catch (error) {
       console.error('Error getting findings:', error);
       throw new Error(`Failed to get findings: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -168,15 +253,19 @@ export class BurpSuiteClient {
     }
   }
 
-  private mapBurpIssue(issue: any): BurpVulnerability {
+  private mapBurpIssue(issue: BurpRawIssue): BurpVulnerability {
     return {
+      serialNumber: issue.serialNumber || 0,
+      type: issue.type || 0,
       name: issue.issue_name || issue.name || 'Unknown vulnerability',
+      host: issue.host || 'Unknown host',
+      path: issue.path || '/',
       severity: this.mapSeverity(issue.severity),
-      url: issue.origin || issue.url || 'Unknown URL',
-      description: issue.issue_background || issue.description || 'No description available',
-      evidence: issue.evidence || 'No evidence available',
-      remediation: issue.remediation_background || issue.remediation || 'No remediation available',
       confidence: this.mapConfidence(issue.confidence),
+      issueBackground: issue.issue_background || issue.issueBackground || 'No description available',
+      remediationBackground: issue.remediation_background || issue.remediationBackground || 'No remediation available',
+      issueDetail: issue.issueDetail || issue.evidence || 'No details available',
+      remediationDetail: issue.remediationDetail || 'No remediation details available',
     };
   }
 

@@ -263,12 +263,18 @@ class SecurityMCPServer {
 
   // Tool handlers
   private async handleBurpScan(args: any) {
-    const result = await this.burpClient.startScan(args.url, args.scanType, args.scope);
+    const config = {
+      urls: Array.isArray(args.url) ? args.url : [args.url],
+      scanType: args.scanType || 'crawl_and_audit',
+      scope: args.scope ? { include: [args.scope] } : undefined,
+    };
+
+    const result = await this.burpClient.startScan(config);
     return {
       content: [
         {
           type: 'text',
-          text: `Started Burp Suite scan with task ID: ${result.taskId}\nTarget: ${args.url}\nScan Type: ${args.scanType}\nStatus: ${result.status}`,
+          text: `Started Burp Suite scan with task ID: ${result.taskId}\nTarget: ${config.urls.join(', ')}\nScan Type: ${config.scanType}\nStatus: ${result.status}`,
         },
       ],
     };
@@ -282,7 +288,7 @@ class SecurityMCPServer {
           type: 'text',
           text:
             `Found ${findings.length} vulnerabilities:\n\n` +
-            findings.map(f => `• ${f.severity}: ${f.name} - ${f.url}`).join('\n'),
+            findings.map(f => `• ${f.severity}: ${f.name} - ${f.host}${f.path}`).join('\n'),
         },
       ],
     };
