@@ -1,10 +1,13 @@
 {
-  "_comment": "Copy this configuration to your VS Code MCP settings",
+  "_comment": "Copy this configuration to your VS Code MCP settings or Claude Desktop config",
   "_instructions": [
     "1. Replace '/path/to/mcp/proxy/jar/mcp-proxy-all.jar' with actual JAR path",
-    "2. Replace 'your-burp-api-key-here' with your actual Burp Suite API key", 
+    "2. Replace 'your-burp-api-key-here' with your actual Burp Suite API key",
     "3. Update the nanobrowser path if your installation is different",
-    "4. Ensure Burp Suite is running on port 9876 with REST API enabled"
+    "4. Ensure Burp Suite is running on port 9876 with REST API enabled (for security MCP)",
+    "5. Ensure Nanobrowser extension is running on port 9222 (for Claude MCP)",
+    "6. For Claude Desktop: Copy to ~/Library/Application Support/Claude/claude_desktop_config.json (macOS)",
+    "7. For VS Code/Cline: Copy to .vscode/mcp.json or Cline settings"
   ],
   "mcpServers": {
     "burp": {
@@ -23,6 +26,16 @@
       ],
       "env": {
         "BURP_API_KEY": "your-burp-api-key-here"
+      }
+    },
+    "nanobrowser-claude": {
+      "command": "node",
+      "args": [
+        "/home/user/Desktop/nanobrowser/packages/claude-mcp/dist/index.js"
+      ],
+      "env": {
+        "NANOBROWSER_WS_URL": "ws://localhost:9222",
+        "NANOBROWSER_HTTP_URL": "http://localhost:8080"
       }
     }
   }
