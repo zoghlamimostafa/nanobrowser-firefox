@@ -1,5 +1,4 @@
 {
-  "extends": "@extension/tsconfig/base.json",
   "compilerOptions": {
     "outDir": "./dist",
     "rootDir": "./src",
@@ -10,7 +9,12 @@
     "esModuleInterop": true,
     "skipLibCheck": true,
     "strict": true,
-    "declaration": true
+    "declaration": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "forceConsistentCasingInFileNames": true
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist"]
