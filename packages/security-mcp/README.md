@@ -65,20 +65,44 @@ pnpm start
 npx nanobrowser-security start
 ```
 
-### 3. VS Code Integration
+### 3. VS Code MCP Integration
 
-Add to your VS Code MCP configuration:
+Add to your VS Code MCP configuration (`settings.json` or MCP config file):
 
 ```json
 {
   "mcpServers": {
+    "burp": {
+      "command": "<path to Java executable packaged with Burp>",
+      "args": [
+        "-jar",
+        "/path/to/mcp/proxy/jar/mcp-proxy-all.jar",
+        "--sse-url",
+        "<your Burp MCP server URL configured in the extension>"
+      ]
+    },
     "nanobrowser-security": {
       "command": "node",
-      "args": ["/path/to/nanobrowser/packages/security-mcp/dist/index.js"]
+      "args": ["/path/to/nanobrowser/packages/security-mcp/dist/index.js"],
+      "env": {
+        "BURP_API_KEY": "your-burp-api-key-here"
+      }
     }
   }
 }
 ```
+
+#### Configuration Details:
+
+- **`burp`**: Direct Burp Suite MCP proxy integration
+  - Requires Burp Suite Professional/Enterprise with MCP proxy JAR
+  - Uses SSE (Server-Sent Events) for real-time communication
+  - Configure the SSE URL in your Burp Suite extension settings
+
+- **`nanobrowser-security`**: Native Nanobrowser Security MCP server
+  - Provides security testing tools and payload generation
+  - Integrates with Burp Suite via REST API (port 1337)
+  - Set `BURP_API_KEY` environment variable for authentication
 
 ## 🛠️ Usage Examples
 

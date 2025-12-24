@@ -1,0 +1,29 @@
+{
+  "_comment": "Copy this configuration to your VS Code MCP settings",
+  "_instructions": [
+    "1. Replace '/path/to/mcp/proxy/jar/mcp-proxy-all.jar' with actual JAR path",
+    "2. Replace 'your-burp-api-key-here' with your actual Burp Suite API key", 
+    "3. Update the nanobrowser path if your installation is different",
+    "4. Ensure Burp Suite is running on port 9876 with REST API enabled"
+  ],
+  "mcpServers": {
+    "burp": {
+      "command": "java",
+      "args": [
+        "-jar",
+        "/path/to/mcp/proxy/jar/mcp-proxy-all.jar",
+        "--sse-url",
+        "http://localhost:8080/mcp-bridge"
+      ]
+    },
+    "nanobrowser-security": {
+      "command": "node",
+      "args": [
+        "/home/user/Desktop/nanobrowser/packages/security-mcp/dist/index.js"
+      ],
+      "env": {
+        "BURP_API_KEY": "your-burp-api-key-here"
+      }
+    }
+  }
+}

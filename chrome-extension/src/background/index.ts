@@ -18,6 +18,7 @@ import { DEFAULT_AGENT_OPTIONS } from './agent/types';
 import { SpeechToTextService } from './services/speechToText';
 import { injectBuildDomTreeScripts } from './browser/dom/service';
 import { analytics } from './services/analytics';
+import { burpMCP } from './services/burpMCP';
 
 const logger = createLogger('background');
 
@@ -236,6 +237,151 @@ chrome.runtime.onConnect.addListener(port => {
               });
             }
             break;
+          }
+
+          // Burp Suite MCP Integration
+          case 'burp_test_connection': {
+            try {
+              const isConnected = await burpMCP.testConnection();
+              return port.postMessage({ 
+                type: 'burp_connection_result', 
+                connected: isConnected,
+                config: burpMCP.getConfig()
+              });
+            } catch (error) {
+              logger.error('Burp connection test failed:', error);
+              return port.postMessage({ 
+                type: 'burp_connection_error', 
+                error: error instanceof Error ? error.message : 'Connection test failed'
+              });
+            }
+          }
+
+          case 'burp_start_scan': {
+            try {
+              if (!message.target) {
+                return port.postMessage({ 
+                  type: 'burp_scan_error', 
+                  error: 'No target URL provided' 
+                });
+              }
+
+              const taskId = await burpMCP.startScan(message.target);
+              return port.postMessage({ 
+                type: 'burp_scan_started', 
+                taskId,
+                target: message.target
+              });
+            } catch (error) {
+              logger.error('Burp scan start failed:', error);
+              return port.postMessage({ 
+                type: 'burp_scan_error', 
+                error: error instanceof Error ? error.message : 'Failed to start scan'
+              });
+            }
+          }
+
+          case 'burp_get_scan_status': {
+            try {
+              if (!message.taskId) {
+                return port.postMessage({ 
+                  type: 'burp_scan_error', 
+                  error: 'No task ID provided' 
+                });
+              }
+
+              const status = await burpMCP.getScanStatus(message.taskId);
+              return port.postMessage({ 
+                type: 'burp_scan_status', 
+                status
+              });
+            } catch (error) {
+              logger.error('Burp scan status failed:', error);
+              return port.postMessage({ 
+                type: 'burp_scan_error', 
+                error: error instanceof Error ? error.message : 'Failed to get scan status'
+              });
+            }
+          }
+
+          case 'burp_get_vulnerabilities': {
+            try {
+              const vulnerabilities = await burpMCP.getVulnerabilities();
+              return port.postMessage({ 
+                type: 'burp_vulnerabilities', 
+                vulnerabilities
+              });
+            } catch (error) {
+              logger.error('Burp get vulnerabilities failed:', error);
+              return port.postMessage({ 
+                type: 'burp_vulnerabilities_error', 
+                error: error instanceof Error ? error.message : 'Failed to get vulnerabilities'
+              });
+            }
+          }
+
+          case 'burp_get_projects': {
+            try {
+              const projects = await burpMCP.getProjects();
+              return port.postMessage({ 
+                type: 'burp_projects', 
+                projects
+              });
+            } catch (error) {
+              logger.error('Burp get projects failed:', error);
+              return port.postMessage({ 
+                type: 'burp_projects_error', 
+                error: error instanceof Error ? error.message : 'Failed to get projects'
+              });
+            }
+          }
+
+          case 'burp_generate_payloads': {
+            try {
+              const { payloadType, count = 10 } = message;
+              if (!payloadType) {
+                return port.postMessage({ 
+                  type: 'burp_payloads_error', 
+                  error: 'No payload type provided' 
+                });
+              }
+
+              const payloads = await burpMCP.generatePayloads(payloadType, count);
+              return port.postMessage({ 
+                type: 'burp_payloads', 
+                payloads,
+                payloadType
+              });
+            } catch (error) {
+              logger.error('Burp generate payloads failed:', error);
+              return port.postMessage({ 
+                type: 'burp_payloads_error', 
+                error: error instanceof Error ? error.message : 'Failed to generate payloads'
+              });
+            }
+          }
+
+          case 'burp_update_config': {
+            try {
+              if (message.config) {
+                burpMCP.updateConfig(message.config);
+                return port.postMessage({ 
+                  type: 'burp_config_updated', 
+                  config: burpMCP.getConfig()
+                });
+              } else {
+                return port.postMessage({ 
+                  type: 'burp_config_error', 
+                  error: 'No config provided' 
+                });
+              }
+            } catch (error) {
+              logger.error('Burp config update failed:', error);
+              return port.postMessage({ 
+                type: 'burp_config_error', 
+                error: error instanceof Error ? error.message : 'Failed to update config'
+              });
+            }
           }
 
           default:

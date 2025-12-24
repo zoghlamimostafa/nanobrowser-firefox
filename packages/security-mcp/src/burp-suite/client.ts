@@ -71,36 +71,29 @@ export interface BurpProject {
 }
 
 export interface BurpConfig {
-  host: string;
-  port: number;
-  apiKey?: string;
-  useHttps?: boolean;
-  proxyPort?: number;
+  apiKey: string;
+  baseUrl: string;
+  port?: number;
 }
 
 export class BurpSuiteClient {
-  private client: AxiosInstance;
   private config: BurpConfig;
+  private client: AxiosInstance;
 
   constructor(config?: Partial<BurpConfig>) {
     this.config = {
-      host: config?.host || 'localhost',
-      port: config?.port || 1337, // Burp Suite Enterprise API port
-      apiKey: config?.apiKey || '',
-      useHttps: config?.useHttps || false,
-      proxyPort: config?.proxyPort || 8080,
-      ...config,
+      apiKey: config?.apiKey || process.env.BURP_API_KEY || '',
+      baseUrl: config?.baseUrl || 'http://127.0.0.1',
+      port: config?.port || 1337, // Burp Suite REST API default port
     };
 
-    const baseURL = `${this.config.useHttps ? 'https' : 'http'}://${this.config.host}:${this.config.port}`;
-
     this.client = axios.create({
-      baseURL,
-      timeout: 30000,
+      baseURL: `${this.config.baseUrl}:${this.config.port}/v0.1`,
       headers: {
+        'Authorization': `Bearer ${this.config.apiKey}`,
         'Content-Type': 'application/json',
-        ...(this.config.apiKey && { Authorization: `Bearer ${this.config.apiKey}` }),
       },
+      timeout: 30000,
     });
   }
 

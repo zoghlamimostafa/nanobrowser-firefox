@@ -100,7 +100,14 @@ export default class Page {
     }
 
     if (this._puppeteerPage) {
-      return true;
+      // Verify the connection is still active
+      try {
+        await this._puppeteerPage.evaluate('1');
+        return true;
+      } catch (error) {
+        logger.info('Existing Puppeteer connection is stale, reconnecting...', error);
+        await this.detachPuppeteer();
+      }
     }
 
     // Check if chrome.debugger is available (not available in Firefox)
@@ -127,6 +134,282 @@ export default class Page {
       return true;
     } catch (error) {
       logger.error('Failed to attach puppeteer:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Ensure Puppeteer is connected and retry if needed
+   */
+  private async _ensurePuppeteerConnection(): Promise<boolean> {
+    // Try to use existing connection
+    if (this._puppeteerPage) {
+      try {
+        await this._puppeteerPage.evaluate('1');
+        return true;
+      } catch (error) {
+        logger.info('Puppeteer connection lost, attempting to reconnect...', error);
+        await this.detachPuppeteer();
+      }
+    }
+
+    // Attempt to reconnect
+    const connected = await this.attachPuppeteer();
+    if (!connected) {
+      logger.error('Failed to establish Puppeteer connection');
+    }
+    return connected;
+  }
+
+  /**
+   * Fallback method for scrolling to text when Puppeteer is not available
+   * Uses Chrome extension content script injection with enhanced search capabilities
+   */
+  private async _scrollToTextFallback(text: string, nth: number = 1): Promise<boolean> {
+    try {
+      logger.info(`Using fallback method to scroll to text: "${text}" (occurrence ${nth})`);
+      
+      // Inject a content script to find and scroll to the text
+      const results = await chrome.scripting.executeScript({
+        target: { tabId: this._tabId },
+        func: (searchText: string, occurrence: number) => {
+          // Enhanced function to find text with multiple strategies
+          function findTextWithMultipleStrategies(text: string): Element[] {
+            const matches: Element[] = [];
+            const normalizedText = text.toLowerCase().trim();
+            const originalText = text.trim();
+            
+            // Strategy 1: Find text nodes containing the search text (case-insensitive)
+            function findTextNodes(element: Element, searchText: string): Text[] {
+              const textNodes: Text[] = [];
+              const walker = document.createTreeWalker(
+                element,
+                NodeFilter.SHOW_TEXT,
+                null
+              );
+
+              let node;
+              while ((node = walker.nextNode())) {
+                const textNode = node as Text;
+                if (textNode.textContent && textNode.textContent.toLowerCase().includes(searchText)) {
+                  textNodes.push(textNode);
+                }
+              }
+              return textNodes;
+            }
+
+            // Get all text nodes matching the search
+            const textNodes = findTextNodes(document.body, normalizedText);
+            for (const textNode of textNodes) {
+              if (textNode.parentElement) {
+                matches.push(textNode.parentElement);
+              }
+            }
+
+            // Strategy 2: Find elements by partial text content (case-insensitive)
+            const allElements = Array.from(document.body.querySelectorAll('*'));
+            for (const element of allElements) {
+              if (element.textContent && element.textContent.toLowerCase().includes(normalizedText)) {
+                // Prefer leaf elements (elements with no child elements, only text)
+                if (element.children.length === 0 && element.textContent.trim().length > 0) {
+                  matches.push(element);
+                } else if (element.textContent.toLowerCase().trim() === normalizedText) {
+                  // Also include exact matches even if they have children
+                  matches.push(element);
+                }
+              }
+            }
+
+            // Strategy 3: Find by common attributes (aria-label, title, alt, placeholder)
+            const attributeSelectors = [
+              `[aria-label*="${normalizedText}" i]`,
+              `[title*="${normalizedText}" i]`,
+              `[alt*="${normalizedText}" i]`,
+              `[placeholder*="${normalizedText}" i]`,
+              `[data-testid*="${normalizedText}" i]`,
+              `[value*="${normalizedText}" i]`
+            ];
+
+            for (const selector of attributeSelectors) {
+              try {
+                const attributeMatches = document.querySelectorAll(selector);
+                matches.push(...Array.from(attributeMatches));
+              } catch (e) {
+                // Selector might not be supported, continue
+              }
+            }
+
+            // Strategy 4: Find by exact word match (for single words)
+            if (!normalizedText.includes(' ')) {
+              const wordBoundaryRegex = new RegExp(`\\b${normalizedText}\\b`, 'i');
+              for (const element of allElements) {
+                if (element.textContent && wordBoundaryRegex.test(element.textContent)) {
+                  matches.push(element);
+                }
+              }
+            }
+
+            // Strategy 5: Find by visible text using getComputedStyle
+            for (const element of allElements) {
+              const computedStyle = window.getComputedStyle(element);
+              if (computedStyle.display !== 'none' && 
+                  computedStyle.visibility !== 'hidden' && 
+                  computedStyle.opacity !== '0') {
+                if (element.textContent && element.textContent.toLowerCase().includes(normalizedText)) {
+                  matches.push(element);
+                }
+              }
+            }
+
+            // Strategy 6: Find by innerHTML content (for cases where textContent doesn't work)
+            for (const element of allElements) {
+              if (element.innerHTML && element.innerHTML.toLowerCase().includes(normalizedText)) {
+                matches.push(element);
+              }
+            }
+
+            // Strategy 7: Try with original case as well
+            if (originalText !== normalizedText) {
+              for (const element of allElements) {
+                if (element.textContent && element.textContent.includes(originalText)) {
+                  matches.push(element);
+                }
+              }
+            }
+
+            // Remove duplicates and sort by relevance
+            const uniqueMatches = [...new Set(matches)];
+            
+            // Sort by relevance: prefer elements with exact text match, then shorter text content
+            return uniqueMatches.sort((a, b) => {
+              const aText = a.textContent?.toLowerCase() || '';
+              const bText = b.textContent?.toLowerCase() || '';
+              
+              // Exact match first
+              if (aText === normalizedText && bText !== normalizedText) return -1;
+              if (bText === normalizedText && aText !== normalizedText) return 1;
+              
+              // Then by text length (shorter is usually more specific)
+              return aText.length - bText.length;
+            });
+          }
+
+          // Find all matching elements using multiple strategies
+          const matchingElements = findTextWithMultipleStrategies(searchText);
+          
+          if (matchingElements.length === 0) {
+            // Try with variations of the search text
+            const variations = [
+              searchText.split(' ')[0], // First word only
+              searchText.toLowerCase(),
+              searchText.toUpperCase(),
+              searchText.replace(/[^\w\s]/g, ''), // Remove special characters
+              searchText.replace(/\s+/g, ' ').trim() // Normalize whitespace
+            ];
+            
+            let partialMatches: Element[] = [];
+            for (const variation of variations) {
+              if (variation !== searchText && variation.length > 0) {
+                partialMatches = findTextWithMultipleStrategies(variation);
+                if (partialMatches.length > 0) {
+                  console.log(`Found ${partialMatches.length} matches using variation: "${variation}"`);
+                  break;
+                }
+              }
+            }
+            
+            if (partialMatches.length === 0) {
+              return { 
+                success: false, 
+                message: `Text "${searchText}" not found using any search strategy or variations` 
+              };
+            }
+            
+            // Use the first partial match if available
+            const targetElement = partialMatches[Math.min(occurrence - 1, partialMatches.length - 1)];
+            const scrollSuccess = scrollToElement(targetElement);
+            
+            return { 
+              success: scrollSuccess, 
+              message: scrollSuccess 
+                ? `Scrolled to partial match for "${searchText}" (found via variation search)`
+                : `Found partial match for "${searchText}" but failed to scroll`
+            };
+          }
+
+          if (matchingElements.length < occurrence) {
+            return { 
+              success: false, 
+              message: `Only ${matchingElements.length} occurrences found, but ${occurrence} requested` 
+            };
+          }
+
+          // Get the target element (nth occurrence)
+          const targetElement = matchingElements[occurrence - 1];
+
+          // Enhanced scrolling with visibility check
+          function scrollToElement(element: Element): boolean {
+            // First try the modern scrollIntoView API
+            try {
+              element.scrollIntoView({ 
+                behavior: 'smooth', 
+                block: 'center', 
+                inline: 'nearest' 
+              });
+
+              // Check if element is now visible
+              const rect = element.getBoundingClientRect();
+              const isVisible = rect.top >= 0 && rect.top <= window.innerHeight;
+              
+              if (!isVisible) {
+                // Fallback: scroll to approximate position
+                const htmlElement = element as HTMLElement;
+                if (htmlElement.offsetTop !== undefined) {
+                  window.scrollTo({
+                    top: htmlElement.offsetTop - (window.innerHeight / 2),
+                    behavior: 'smooth'
+                  });
+                }
+              }
+              
+              return true;
+            } catch (error) {
+              // Fallback for older browsers
+              try {
+                element.scrollIntoView();
+                return true;
+              } catch (fallbackError) {
+                return false;
+              }
+            }
+          }
+
+          const scrollSuccess = scrollToElement(targetElement);
+          
+          return { 
+            success: scrollSuccess, 
+            message: scrollSuccess 
+              ? `Scrolled to occurrence ${occurrence} of "${searchText}" using enhanced search`
+              : `Found element but failed to scroll to occurrence ${occurrence} of "${searchText}"`
+          };
+        },
+        args: [text, nth]
+      });
+
+      if (results && results[0] && results[0].result) {
+        const result = results[0].result as { success: boolean; message: string };
+        if (result.success) {
+          logger.info(result.message);
+          return true;
+        } else {
+          logger.error(`Fallback scroll failed: ${result.message}`);
+          return false;
+        }
+      }
+
+      return false;
+    } catch (error) {
+      logger.error('Fallback scroll method failed:', error);
       return false;
     }
   }
@@ -193,13 +476,43 @@ export default class Page {
     if (!this._validWebPage) {
       return null;
     }
-    return _getClickableElements(
-      this._tabId,
-      this.url(),
-      showHighlightElements,
-      focusElement,
-      this._config.viewportExpansion,
-    );
+    
+    try {
+      return _getClickableElements(
+        this._tabId,
+        this.url(),
+        showHighlightElements,
+        focusElement,
+        this._config.viewportExpansion,
+      );
+    } catch (error) {
+      logger.error('Failed to get clickable elements:', error);
+      
+      // Return a minimal fallback DOM state
+      const fallbackState: DOMState = {
+        elementTree: new DOMElementNode({
+          tagName: 'body',
+          xpath: 'html/body',
+          attributes: {},
+          children: [],
+          isVisible: true,
+          isInteractive: false,
+          isTopElement: true,
+          isInViewport: true,
+          shadowRoot: false,
+          highlightIndex: null,
+          pageCoordinates: undefined,
+          viewportCoordinates: undefined,
+          viewportInfo: undefined,
+          isNew: null,
+          parent: null
+        }),
+        selectorMap: new Map()
+      };
+      
+      logger.warning('Returning fallback DOM state due to script injection failures');
+      return fallbackState;
+    }
   }
 
   // Get scroll position information for the current page.
@@ -212,8 +525,9 @@ export default class Page {
 
   // Get scroll position information for a specific element.
   async getElementScrollInfo(elementNode: DOMElementNode): Promise<[number, number, number]> {
-    if (!this._puppeteerPage) {
-      throw new Error('Puppeteer is not connected');
+    // Ensure Puppeteer is connected before proceeding
+    if (!(await this._ensurePuppeteerConnection())) {
+      throw new Error('Puppeteer is not available and no fallback for element scroll info');
     }
 
     const element = await this.locateElement(elementNode);
@@ -244,6 +558,7 @@ export default class Page {
    * @returns The nearest scrollable ancestor or null if none found
    */
   private async _findNearestScrollableElement(element: ElementHandle): Promise<ElementHandle | null> {
+    // Ensure we have a valid Puppeteer page
     if (!this._puppeteerPage) {
       return null;
     }
@@ -339,10 +654,26 @@ export default class Page {
   }
 
   async getContent(): Promise<string> {
-    if (!this._puppeteerPage) {
-      throw new Error('Puppeteer page is not connected');
+    // Ensure Puppeteer is connected before proceeding
+    if (!(await this._ensurePuppeteerConnection())) {
+      // Fallback to using content script injection
+      try {
+        const results = await chrome.scripting.executeScript({
+          target: { tabId: this._tabId },
+          func: () => document.documentElement.outerHTML
+        });
+        
+        if (results && results[0] && results[0].result) {
+          return results[0].result as string;
+        }
+        
+        throw new Error('Failed to get content via content script');
+      } catch (error) {
+        throw new Error(`Failed to get page content: ${error instanceof Error ? error.message : String(error)}`);
+      }
     }
-    return await this._puppeteerPage.content();
+
+    return await this._puppeteerPage!.content();
   }
 
   getCachedState(): PageState | null {
@@ -388,18 +719,27 @@ export default class Page {
 
   async _updateState(useVision = false, focusElement = -1): Promise<PageState> {
     try {
-      // Test if page is still accessible
-      // @ts-expect-error - puppeteerPage is not null, already checked before calling this function
-      await this._puppeteerPage.evaluate('1');
+      // Test if page is still accessible - but only if Puppeteer is available
+      if (this._puppeteerPage) {
+        await this._puppeteerPage.evaluate('1');
+      }
     } catch (error) {
       logger.warning('Current page is no longer accessible:', error);
       if (this._browser) {
-        const pages = await this._browser.pages();
-        if (pages.length > 0) {
-          this._puppeteerPage = pages[0];
-        } else {
-          throw new Error('Browser closed: no valid pages available');
+        try {
+          const pages = await this._browser.pages();
+          if (pages.length > 0) {
+            this._puppeteerPage = pages[0];
+          } else {
+            logger.warning('Browser closed: no valid pages available');
+            this._puppeteerPage = null;
+          }
+        } catch (browserError) {
+          logger.error('Failed to get browser pages:', browserError);
+          this._puppeteerPage = null;
         }
+      } else {
+        this._puppeteerPage = null;
       }
     }
 
@@ -538,10 +878,22 @@ export default class Page {
   }
 
   async refreshPage(): Promise<void> {
-    if (!this._puppeteerPage) return;
+    // Ensure Puppeteer is connected before proceeding
+    if (!(await this._ensurePuppeteerConnection())) {
+      logger.warning('Puppeteer not available for refresh, using browser refresh fallback');
+      try {
+        await chrome.tabs.reload(this._tabId);
+        // Wait a basic timeout for the page to reload
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        return;
+      } catch (error) {
+        logger.error('Browser refresh fallback failed:', error);
+        throw error;
+      }
+    }
 
     try {
-      await Promise.all([this.waitForPageAndFramesLoad(), this._puppeteerPage.reload()]);
+      await Promise.all([this.waitForPageAndFramesLoad(), this._puppeteerPage!.reload()]);
       logger.info('Page refresh complete');
     } catch (error) {
       if (error instanceof URLNotAllowedError) {
@@ -559,10 +911,22 @@ export default class Page {
   }
 
   async goBack(): Promise<void> {
-    if (!this._puppeteerPage) return;
+    // Ensure Puppeteer is connected before proceeding
+    if (!(await this._ensurePuppeteerConnection())) {
+      logger.warning('Puppeteer not available for navigation, using browser back fallback');
+      try {
+        await chrome.tabs.goBack(this._tabId);
+        // Wait a basic timeout for the navigation to complete
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        return;
+      } catch (error) {
+        logger.error('Browser back navigation fallback failed:', error);
+        throw error;
+      }
+    }
 
     try {
-      await Promise.all([this.waitForPageAndFramesLoad(), this._puppeteerPage.goBack()]);
+      await Promise.all([this.waitForPageAndFramesLoad(), this._puppeteerPage!.goBack()]);
       logger.info('Navigation back completed');
     } catch (error) {
       if (error instanceof URLNotAllowedError) {
@@ -580,10 +944,22 @@ export default class Page {
   }
 
   async goForward(): Promise<void> {
-    if (!this._puppeteerPage) return;
+    // Ensure Puppeteer is connected before proceeding
+    if (!(await this._ensurePuppeteerConnection())) {
+      logger.warning('Puppeteer not available for navigation, using browser forward fallback');
+      try {
+        await chrome.tabs.goForward(this._tabId);
+        // Wait a basic timeout for the navigation to complete
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        return;
+      } catch (error) {
+        logger.error('Browser forward navigation fallback failed:', error);
+        throw error;
+      }
+    }
 
     try {
-      await Promise.all([this.waitForPageAndFramesLoad(), this._puppeteerPage.goForward()]);
+      await Promise.all([this.waitForPageAndFramesLoad(), this._puppeteerPage!.goForward()]);
       logger.info('Navigation forward completed');
     } catch (error) {
       if (error instanceof URLNotAllowedError) {
@@ -606,8 +982,11 @@ export default class Page {
   // if elementNode is not provided, scroll to a percentage of the page
   async scrollToPercent(yPercent: number, elementNode?: DOMElementNode): Promise<void> {
     if (!this._puppeteerPage) {
-      throw new Error('Puppeteer is not connected');
+      // Fallback: Use Chrome Extension APIs to scroll
+      logger.warning('Puppeteer not connected, using fallback scroll method');
+      return this._scrollToPercentFallback(yPercent, elementNode);
     }
+    
     if (!elementNode) {
       await this._puppeteerPage.evaluate(yPercent => {
         const scrollHeight = document.documentElement.scrollHeight;
@@ -849,8 +1228,10 @@ export default class Page {
   }
 
   async scrollToText(text: string, nth: number = 1): Promise<boolean> {
-    if (!this._puppeteerPage) {
-      throw new Error('Puppeteer is not connected');
+    // Ensure Puppeteer is connected before proceeding
+    if (!(await this._ensurePuppeteerConnection())) {
+      // Fallback to Chrome extension native search if Puppeteer is not available
+      return this._scrollToTextFallback(text, nth);
     }
 
     try {
@@ -868,7 +1249,7 @@ export default class Page {
       for (const selector of selectors) {
         try {
           // Use $$ to get all matching elements
-          const elements = await this._puppeteerPage.$$(selector);
+          const elements = await this._puppeteerPage!.$$(selector);
 
           if (elements.length > 0) {
             // Find visible elements and select the nth occurrence
@@ -925,8 +1306,13 @@ export default class Page {
     const selectorMap = this.getSelectorMap();
     const element = selectorMap?.get(index);
 
-    if (!element || !this._puppeteerPage) {
-      throw new Error('Element not found or puppeteer is not connected');
+    if (!element) {
+      throw new Error('Element not found');
+    }
+
+    // Ensure Puppeteer is connected before proceeding
+    if (!(await this._ensurePuppeteerConnection())) {
+      throw new Error('Puppeteer is not available for dropdown operations');
     }
 
     try {
@@ -1295,7 +1681,9 @@ export default class Page {
 
   async clickElementNode(useVision: boolean, elementNode: DOMElementNode): Promise<void> {
     if (!this._puppeteerPage) {
-      throw new Error('Puppeteer is not connected');
+      // Fallback: Use Chrome Extension APIs to click element
+      logger.warning('Puppeteer not connected, using fallback click method');
+      return this._clickElementFallback(elementNode);
     }
 
     try {
@@ -1342,6 +1730,151 @@ export default class Page {
       throw new Error(
         `Failed to click element: ${elementNode}. Error: ${error instanceof Error ? error.message : String(error)}`,
       );
+    }
+  }
+
+  /**
+   * Fallback method to click an element using Chrome Extension content script injection
+   */
+  private async _clickElementFallback(elementNode: DOMElementNode): Promise<void> {
+    try {
+      const result = await chrome.scripting.executeScript({
+        target: { tabId: this._tabId },
+        func: (xpath, cssSelector) => {
+          // Try to find element by xpath first
+          if (xpath) {
+            try {
+              const xpathResult = document.evaluate(
+                xpath,
+                document,
+                null,
+                XPathResult.FIRST_ORDERED_NODE_TYPE,
+                null
+              );
+              const element = xpathResult.singleNodeValue as HTMLElement;
+              if (element) {
+                element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                element.click();
+                return { success: true, method: 'xpath', element: element.tagName };
+              }
+            } catch (error) {
+              console.warn('XPath click failed:', error);
+            }
+          }
+
+          // Fallback to CSS selector
+          if (cssSelector) {
+            try {
+              const element = document.querySelector(cssSelector) as HTMLElement;
+              if (element) {
+                element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                element.click();
+                return { success: true, method: 'css', element: element.tagName };
+              }
+            } catch (error) {
+              console.warn('CSS selector click failed:', error);
+            }
+          }
+
+          return { success: false, error: 'Element not found' };
+        },
+        args: [elementNode.xpath, elementNode.enhancedCssSelectorForElement(this._config.includeDynamicAttributes)]
+      });
+
+      const clickResult = result[0]?.result as { success: boolean; method?: string; element?: string; error?: string } | undefined;
+      if (!clickResult?.success) {
+        throw new Error(`Fallback click failed: ${clickResult?.error || 'Unknown error'}`);
+      }
+
+      logger.info(`Fallback click successful using ${clickResult.method} on ${clickResult.element}`);
+      
+      // Wait a bit for any navigation to start
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+    } catch (error) {
+      logger.error('Fallback click method failed:', error);
+      throw new Error(`Failed to click element using fallback method: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  /**
+   * Fallback method to scroll to a percentage using Chrome Extension content script injection
+   */
+  private async _scrollToPercentFallback(yPercent: number, elementNode?: DOMElementNode): Promise<void> {
+    try {
+      const result = await chrome.scripting.executeScript({
+        target: { tabId: this._tabId },
+        func: (yPercent: number, xpath: string | null, cssSelector: string | null) => {
+          if (!xpath && !cssSelector) {
+            // Scroll the whole page
+            const scrollHeight = document.documentElement.scrollHeight;
+            const viewportHeight = window.visualViewport?.height || window.innerHeight;
+            const scrollTop = (scrollHeight - viewportHeight) * (yPercent / 100);
+            window.scrollTo({
+              top: scrollTop,
+              left: window.scrollX,
+              behavior: 'smooth',
+            });
+            return { success: true, method: 'page', scrollTop };
+          }
+
+          // Try to find and scroll specific element
+          let element: HTMLElement | null = null;
+          
+          if (xpath) {
+            try {
+              const xpathResult = document.evaluate(
+                xpath,
+                document,
+                null,
+                XPathResult.FIRST_ORDERED_NODE_TYPE,
+                null
+              );
+              element = xpathResult.singleNodeValue as HTMLElement;
+            } catch (error) {
+              console.warn('XPath scroll failed:', error);
+            }
+          }
+
+          if (!element && cssSelector) {
+            try {
+              element = document.querySelector(cssSelector) as HTMLElement;
+            } catch (error) {
+              console.warn('CSS selector scroll failed:', error);
+            }
+          }
+
+          if (element) {
+            const scrollHeight = element.scrollHeight;
+            const clientHeight = element.clientHeight;
+            const scrollTop = (scrollHeight - clientHeight) * (yPercent / 100);
+            element.scrollTo({
+              top: scrollTop,
+              left: element.scrollLeft,
+              behavior: 'smooth',
+            });
+            return { success: true, method: 'element', scrollTop, elementTag: element.tagName };
+          }
+
+          return { success: false, error: 'Element not found' };
+        },
+        args: [
+          yPercent,
+          elementNode?.xpath || null,
+          elementNode ? elementNode.enhancedCssSelectorForElement(this._config.includeDynamicAttributes) : null
+        ]
+      });
+
+      const scrollResult = result[0]?.result as { success: boolean; method?: string; scrollTop?: number; elementTag?: string; error?: string } | undefined;
+      if (!scrollResult?.success) {
+        throw new Error(`Fallback scroll failed: ${scrollResult?.error || 'Unknown error'}`);
+      }
+
+      logger.info(`Fallback scroll successful: ${scrollResult.method} scroll to ${yPercent}% (scrollTop: ${scrollResult.scrollTop})`);
+      
+    } catch (error) {
+      logger.error('Fallback scroll method failed:', error);
+      throw new Error(`Failed to scroll using fallback method: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
@@ -1402,8 +1935,11 @@ export default class Page {
   }
 
   private async _waitForStableNetwork() {
-    if (!this._puppeteerPage) {
-      throw new Error('Puppeteer page is not connected');
+    // Ensure Puppeteer is connected before proceeding
+    if (!(await this._ensurePuppeteerConnection())) {
+      // Fallback: simply wait for a basic timeout when Puppeteer is not available
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      return;
     }
 
     const RELEVANT_RESOURCE_TYPES = new Set(['document', 'stylesheet', 'image', 'font', 'script', 'iframe']);
@@ -1535,8 +2071,8 @@ export default class Page {
     };
 
     // Add event listeners
-    this._puppeteerPage.on('request', onRequest);
-    this._puppeteerPage.on('response', onResponse);
+    this._puppeteerPage!.on('request', onRequest);
+    this._puppeteerPage!.on('response', onResponse);
 
     try {
       const startTime = Date.now();
@@ -1563,8 +2099,8 @@ export default class Page {
       }
     } finally {
       // Clean up event listeners
-      this._puppeteerPage.off('request', onRequest);
-      this._puppeteerPage.off('response', onResponse);
+      this._puppeteerPage!.off('request', onRequest);
+      this._puppeteerPage!.off('response', onResponse);
     }
     console.debug(`Network stabilized for ${this._config.waitForNetworkIdlePageLoadTime} seconds`);
   }

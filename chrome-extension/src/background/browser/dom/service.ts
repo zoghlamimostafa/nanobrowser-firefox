@@ -135,26 +135,83 @@ async function _buildDomTree(
 
   await injectBuildDomTreeScripts(tabId);
 
-  const mainFrameResult = await chrome.scripting.executeScript({
-    target: { tabId },
-    func: args => {
-      // Access buildDomTree from the window context of the target page
-      return window.buildDomTree(args);
-    },
-    args: [
-      {
-        showHighlightElements,
-        focusHighlightIndex: focusElement,
-        viewportExpansion,
-        startId: 0,
-        startHighlightIndex: 0,
-        debugMode,
+  let mainFrameResult;
+  try {
+    mainFrameResult = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: args => {
+        try {
+          // Access buildDomTree from the window context of the target page
+          const result = window.buildDomTree(args);
+          
+          // Ensure the result is serializable by converting it to plain objects
+          if (result && typeof result === 'object' && 'map' in result && 'rootId' in result) {
+            // Convert Map to plain object if needed and ensure all data is serializable
+            const serializedMap: Record<string, unknown> = {};
+            
+            if (result.map && typeof result.map === 'object') {
+              for (const [key, value] of Object.entries(result.map)) {
+                if (value && typeof value === 'object') {
+                  // Create a serializable copy of the value, removing any DOM references
+                  serializedMap[key] = {
+                    ...value,
+                    // Remove any potential DOM element references
+                    element: undefined,
+                    domNode: undefined,
+                    _element: undefined,
+                    _domNode: undefined
+                  };
+                } else {
+                  serializedMap[key] = value;
+                }
+              }
+            }
+            
+            return {
+              rootId: result.rootId,
+              map: serializedMap,
+              perfMetrics: ('perfMetrics' in result) ? result.perfMetrics : undefined
+            };
+          }
+          
+          return result;
+        } catch (error) {
+          console.error('Error in buildDomTree execution:', error);
+          const errorMessage = error instanceof Error ? error.message : 'Unknown error in buildDomTree';
+          return {
+            error: true,
+            message: errorMessage,
+            rootId: null,
+            map: {}
+          };
+        }
       },
-    ],
-  });
+      args: [
+        {
+          showHighlightElements,
+          focusHighlightIndex: focusElement,
+          viewportExpansion,
+          startId: 0,
+          startHighlightIndex: 0,
+          debugMode,
+        },
+      ],
+    });
+  } catch (error) {
+    logger.error('Failed to execute buildDomTree script:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown script execution error';
+    throw new Error(`Script execution failed: ${errorMessage}`);
+  }
 
   // First cast to unknown, then to BuildDomTreeResult
   let mainFramePage = mainFrameResult[0]?.result as unknown as BuildDomTreeResult;
+  
+  // Check if the result contains an error
+  if (mainFramePage && typeof mainFramePage === 'object' && 'error' in mainFramePage) {
+    const errorResult = mainFramePage as { error: boolean; message?: string };
+    throw new Error(`buildDomTree execution failed: ${errorResult.message || 'Unknown error'}`);
+  }
+  
   if (!mainFramePage || !mainFramePage.map || !mainFramePage.rootId) {
     throw new Error('Failed to build DOM tree: No result returned or invalid structure');
   }

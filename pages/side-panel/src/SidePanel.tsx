@@ -5,6 +5,7 @@ import { RxDiscordLogo } from 'react-icons/rx';
 import { FiSettings } from 'react-icons/fi';
 import { PiPlusBold } from 'react-icons/pi';
 import { GrHistory } from 'react-icons/gr';
+// import { MdSecurity } from 'react-icons/md'; // Hidden - Security Testing disabled
 import { type Message, Actors, chatHistoryStore, agentModelStore, generalSettingsStore } from '@extension/storage';
 import favoritesStorage, { type FavoritePrompt } from '@extension/storage/lib/prompt/favorites';
 import { t } from '@extension/i18n';
@@ -12,6 +13,7 @@ import MessageList from './components/MessageList';
 import ChatInput from './components/ChatInput';
 import ChatHistoryList from './components/ChatHistoryList';
 import BookmarkList from './components/BookmarkList';
+import SecurityDashboard from './components/SecurityDashboard';
 import { EventType, type AgentEvent, ExecutionState } from './types/event';
 import './SidePanel.css';
 
@@ -29,6 +31,7 @@ const SidePanel = () => {
   const [showStopButton, setShowStopButton] = useState(false);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [showHistory, setShowHistory] = useState(false);
+  const [showSecurity, setShowSecurity] = useState(false);
   const [chatSessions, setChatSessions] = useState<Array<{ id: string; title: string; createdAt: number }>>([]);
   const [isFollowUpMode, setIsFollowUpMode] = useState(false);
   const [isHistoricalSession, setIsHistoricalSession] = useState(false);
@@ -1017,7 +1020,7 @@ const SidePanel = () => {
             )}
           </div>
           <div className="header-icons">
-            {!showHistory && (
+            {!showHistory && !showSecurity && (
               <>
                 <button
                   type="button"
@@ -1037,6 +1040,17 @@ const SidePanel = () => {
                   tabIndex={0}>
                   <GrHistory size={20} />
                 </button>
+                {/* Security Testing button hidden
+                <button
+                  type="button"
+                  onClick={() => setShowSecurity(true)}
+                  onKeyDown={e => e.key === 'Enter' && setShowSecurity(true)}
+                  className={`header-icon ${isDarkMode ? 'text-sky-400 hover:text-sky-300' : 'text-sky-400 hover:text-sky-500'} cursor-pointer`}
+                  aria-label="Security Testing"
+                  tabIndex={0}>
+                  <MdSecurity size={20} />
+                </button>
+                */}
               </>
             )}
             <a
@@ -1066,6 +1080,13 @@ const SidePanel = () => {
               onSessionBookmark={handleSessionBookmark}
               visible={true}
               isDarkMode={isDarkMode}
+            />
+          </div>
+        ) : showSecurity ? (
+          <div className="flex-1 overflow-hidden">
+            <SecurityDashboard
+              isDarkMode={isDarkMode}
+              onClose={() => setShowSecurity(false)}
             />
           </div>
         ) : (

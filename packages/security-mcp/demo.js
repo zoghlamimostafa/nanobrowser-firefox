@@ -21,13 +21,13 @@ async function runDemo() {
     const payloadGen = new PayloadGenerator();
     const recon = new ReconTools();
     const database = new SecurityDatabase();
-    const burpClient = new BurpSuiteClient({
-      host: 'localhost',
-      port: 1337,
-      apiKey: process.env.BURP_API_KEY || '',
-    });
-
-    // Wait for database initialization
+// Demo configuration
+const config = {
+  burp: {
+    apiKey: process.env.BURP_API_KEY || 'your-api-key-here',
+    baseUrl: 'http://127.0.0.1',
+    port: 1337, // Burp Suite REST API port
+  },    // Wait for database initialization
     await new Promise(resolve => setTimeout(resolve, 1000));
     console.log('✅ Database initialized');
 

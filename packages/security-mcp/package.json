@@ -1,6 +1,6 @@
 {
   "name": "@extension/security-mcp",
-  "version": "0.1.12",
+  "version": "0.1.12.1",
   "description": "Security testing MCP server for Nanobrowser - Burp Suite integration and penetration testing tools",
   "type": "module",
   "main": "dist/index.js",

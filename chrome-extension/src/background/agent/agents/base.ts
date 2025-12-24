@@ -119,7 +119,7 @@ export abstract class BaseAgent<T extends z.ZodType, M = unknown> {
   }
 
   async invoke(inputMessages: BaseMessage[]): Promise<this['ModelOutput']> {
-    // Use structured output
+    // Try structured output first
     if (this.withStructuredOutput) {
       logger.debug(`[${this.modelName}] Preparing structured output call with schema:`, {
         schemaName: this.modelOutputToolName,
@@ -149,20 +149,44 @@ export abstract class BaseAgent<T extends z.ZodType, M = unknown> {
           logger.debug(`[${this.modelName}] Successfully parsed structured output`);
           return response.parsed;
         }
-        logger.error('Failed to parse response', response);
+        
+        // If structured output failed to parse, try manual extraction from raw response
+        if (response.raw && typeof response.raw.content === 'string') {
+          logger.warning(`[${this.modelName}] Structured output parsing failed, attempting manual JSON extraction...`);
+          const rawContent = removeThinkTags(response.raw.content);
+          try {
+            const extractedJson = extractJsonFromModelOutput(rawContent);
+            const parsed = this.validateModelOutput(extractedJson);
+            if (parsed) {
+              logger.info(`[${this.modelName}] Successfully recovered using manual JSON extraction`);
+              return parsed;
+            }
+          } catch (extractionError) {
+            logger.error(`[${this.modelName}] Manual extraction also failed:`, extractionError);
+          }
+        }
+        
+        logger.error('Failed to parse response with both structured output and manual extraction', response);
         throw new Error('Could not parse response with structured output');
       } catch (error) {
         if (isAbortedError(error)) {
           throw error;
         }
-        logger.error(`[${this.modelName}] LLM call failed with error:`, error);
-        const errorMessage = `Failed to invoke ${this.modelName} with structured output: \n${error instanceof Error ? error.message : String(error)}`;
-        throw new Error(errorMessage);
+        
+        // If structured output completely failed, try falling back to manual extraction
+        if (error instanceof Error && error.message.includes('Could not parse response with structured output')) {
+          logger.warning(`[${this.modelName}] Structured output failed, falling back to manual extraction...`);
+          // Fall through to manual extraction
+        } else {
+          logger.error(`[${this.modelName}] LLM call failed with error:`, error);
+          const errorMessage = `Failed to invoke ${this.modelName} with structured output: \n${error instanceof Error ? error.message : String(error)}`;
+          throw new Error(errorMessage);
+        }
       }
     }
 
-    // Without structured output support, need to extract JSON from model output manually
-    logger.debug(`[${this.modelName}] Using manual JSON extraction fallback method`);
+    // Manual JSON extraction (either as fallback or primary method)
+    logger.debug(`[${this.modelName}] Using manual JSON extraction ${this.withStructuredOutput ? '(fallback mode)' : '(primary mode)'}`);
     const convertedInputMessages = convertInputMessages(inputMessages, this.modelName);
 
     try {
@@ -172,15 +196,17 @@ export abstract class BaseAgent<T extends z.ZodType, M = unknown> {
       });
 
       if (typeof response.content === 'string') {
-        response.content = removeThinkTags(response.content);
+        const cleanedContent = removeThinkTags(response.content);
         try {
-          const extractedJson = extractJsonFromModelOutput(response.content);
+          const extractedJson = extractJsonFromModelOutput(cleanedContent);
           const parsed = this.validateModelOutput(extractedJson);
           if (parsed) {
+            logger.debug(`[${this.modelName}] Successfully parsed response using manual JSON extraction`);
             return parsed;
           }
         } catch (error) {
           logger.error(`[${this.modelName}] Failed to extract JSON from response:`, error);
+          logger.debug(`[${this.modelName}] Raw response content:`, cleanedContent.slice(0, 1000));
           const errorMessage = `Failed to extract JSON from response: ${error}`;
           throw new Error(errorMessage);
         }
@@ -189,6 +215,7 @@ export abstract class BaseAgent<T extends z.ZodType, M = unknown> {
       logger.error(`[${this.modelName}] LLM call failed in manual extraction mode:`, error);
       throw error;
     }
+    
     const errorMessage = `Failed to parse response from ${this.modelName}`;
     logger.error(errorMessage);
     throw new ResponseParseError('Could not parse response');

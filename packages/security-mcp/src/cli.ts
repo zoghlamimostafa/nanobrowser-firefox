@@ -65,7 +65,7 @@ program
   .description('Connect to Burp Suite and run scan')
   .argument('<url>', 'Target URL to scan')
   .option('--host <host>', 'Burp Suite host', 'localhost')
-  .option('--port <port>', 'Burp Suite port', '1337')
+  .option('--port <port>', 'Burp Suite port', '9876')
   .option('--api-key <key>', 'Burp Suite API key')
   .action(async (url, options) => {
     console.log(chalk.blue(`🕷️  Connecting to Burp Suite at ${options.host}:${options.port}...`));
@@ -95,7 +95,7 @@ program
   .command('config')
   .description('Configure Nanobrowser Security settings')
   .option('--burp-host <host>', 'Set Burp Suite host')
-  .option('--burp-port <port>', 'Set Burp Suite port')
+  .option('--burp-port <port>', 'Burp Suite API port', '1337')
   .option('--burp-api-key <key>', 'Set Burp Suite API key')
   .option('--db-path <path>', 'Set database file path')
   .action(async options => {

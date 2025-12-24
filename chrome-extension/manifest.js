@@ -108,11 +108,6 @@ const manifest = withOperaSidebar(
         gecko: {
           id: 'nanobrowser-firefox@zoghlamimostafa.github.io',
           strict_min_version: '109.0',
-          data_collection_permissions: {
-            required: true,
-            web_accessible_resources: false,
-            content_scripts: false,
-          },
         },
       },
     }),

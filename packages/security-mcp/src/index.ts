@@ -433,7 +433,8 @@ async function main() {
   await server.run();
 }
 
-if (require.main === module) {
+// ES module check instead of require.main === module
+if (import.meta.url === `file://${process.argv[1]}`) {
   main().catch(console.error);
 }
 
