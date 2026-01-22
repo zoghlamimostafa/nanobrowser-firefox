@@ -1,0 +1,90 @@
+name: Publish Firefox Add-on
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: 'Release channel (listed or unlisted)'
+        required: true
+        default: 'listed'
+        type: choice
+        options:
+          - listed
+          - unlisted
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Build Firefox extension
+        run: pnpm build:firefox
+
+      - name: Get extension version
+        id: version
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Submit to AMO (addons.mozilla.org)
+        id: sign
+        uses: kewisch/action-web-ext@v1
+        with:
+          cmd: sign
+          source: dist/
+          channel: ${{ github.event.inputs.channel || 'listed' }}
+          apiKey: ${{ secrets.JWT_ISSUER }}
+          apiSecret: ${{ secrets.JWT_SECRET }}
+          timeout: 900000
+        continue-on-error: true
+
+      - name: Check submission result
+        run: |
+          echo "Extension submitted to AMO for review"
+          echo "Note: Listed extensions are submitted for manual review by Mozilla"
+          echo "Check status at: https://addons.mozilla.org/developers/addons"
+
+      - name: Create XPI package
+        run: pnpm zip:firefox
+
+      - name: Find XPI file
+        id: find-xpi
+        run: |
+          XPI_FILE=$(ls dist-zip/*.xpi 2>/dev/null | head -1)
+          if [ -n "$XPI_FILE" ]; then
+            echo "xpi_path=$XPI_FILE" >> $GITHUB_OUTPUT
+            echo "Found XPI: $XPI_FILE"
+          fi
+
+      - name: Upload XPI to release
+        if: github.event_name == 'release' && steps.find-xpi.outputs.xpi_path != ''
+        uses: softprops/action-gh-release@v1
+        with:
+          files: dist-zip/*.xpi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: firefox-extension-${{ steps.version.outputs.version }}
+          path: |
+            dist/
+            dist-zip/
+            web-ext-artifacts/

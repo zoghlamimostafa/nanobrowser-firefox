@@ -28,4 +28,4 @@ chrome-extension/public/manifest.json
 .nanobrowser
 .vscode
 .cursor
-*.py
+*.pyconsole-export*.log
