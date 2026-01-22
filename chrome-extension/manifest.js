@@ -61,14 +61,21 @@ const manifest = withOperaSidebar(
     version: packageJson.version,
     description: '__MSG_app_metadata_description__',
     host_permissions: ['<all_urls>'],
-    permissions: ['storage', 'scripting', 'tabs', 'activeTab', 'debugger', 'unlimitedStorage', 'webNavigation'],
+    permissions: isFirefox
+      ? ['storage', 'scripting', 'tabs', 'activeTab', 'unlimitedStorage', 'webNavigation']
+      : ['storage', 'scripting', 'tabs', 'activeTab', 'debugger', 'unlimitedStorage', 'webNavigation'],
     options_page: 'options/index.html',
-    background: {
-      service_worker: 'background.iife.js',
-      type: 'module',
-    },
+    background: isFirefox
+      ? {
+          scripts: ['background.iife.js'],
+        }
+      : {
+          service_worker: 'background.iife.js',
+          type: 'module',
+        },
     action: {
       default_icon: 'icon-32.png',
+      ...(isFirefox && { default_popup: 'side-panel/index.html' }),
     },
     icons: {
       128: 'icon-128.png',
@@ -94,6 +101,15 @@ const manifest = withOperaSidebar(
         matches: ['*://*/*'],
       },
     ],
+    // Firefox-specific settings
+    ...(isFirefox && {
+      browser_specific_settings: {
+        gecko: {
+          id: 'nanobrowser@zoghlamimostafa.com',
+          strict_min_version: '109.0',
+        },
+      },
+    }),
   }),
 );
 
