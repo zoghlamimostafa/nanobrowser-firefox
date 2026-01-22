@@ -42,12 +42,17 @@ jobs:
           VERSION=$(node -p "require('./package.json').version")
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
+      - name: Create XPI package
+        run: |
+          cd dist && zip -r ../firefox-extension.xpi . && cd ..
+          ls -la firefox-extension.xpi
+
       - name: Submit to AMO (addons.mozilla.org)
         id: sign
         uses: kewisch/action-web-ext@v1
         with:
           cmd: sign
-          source: dist/
+          source: firefox-extension.xpi
           channel: ${{ github.event.inputs.channel || 'listed' }}
           apiKey: ${{ secrets.JWT_ISSUER }}
           apiSecret: ${{ secrets.JWT_SECRET }}
@@ -60,7 +65,7 @@ jobs:
           echo "Note: Listed extensions are submitted for manual review by Mozilla"
           echo "Check status at: https://addons.mozilla.org/developers/addons"
 
-      - name: Create XPI package
+      - name: Create dist-zip XPI
         run: pnpm zip:firefox
 
       - name: Find XPI file
